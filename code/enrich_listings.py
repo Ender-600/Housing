@@ -282,18 +282,46 @@ def main():
     # Load data
     print(f"\n📂 Loading data from {args.input}...")
     try:
-        df = pd.read_csv(args.input)
+        df = pd.read_csv(args.input, on_bad_lines='skip')
         print(f"✓ Loaded {len(df)} listings")
+        
+        # 清理列名：移除额外的空格和引号
+        df.columns = df.columns.str.strip().str.strip('"')
+        print(f"✓ Cleaned column names")
+        
     except Exception as e:
         print(f"❌ Error loading CSV: {e}")
         sys.exit(1)
     
-    # Verify required columns
-    required_cols = ['latitude', 'longitude']
-    missing_cols = [col for col in required_cols if col not in df.columns]
-    if missing_cols:
-        print(f"❌ Error: Missing required columns: {missing_cols}")
+    # Verify required columns and map to actual column names
+    lat_col = None
+    lon_col = None
+    
+    # 查找经纬度列
+    for col in df.columns:
+        col_lower = col.lower()
+        if col_lower == 'latitude' or 'latlong/latitude' in col_lower or 'hdpdata/homeinfo/latitude' in col_lower:
+            lat_col = col
+        elif col_lower == 'longitude' or 'latlong/longitude' in col_lower or 'hdpdata/homeinfo/longitude' in col_lower:
+            lon_col = col
+    
+    if lat_col is None or lon_col is None:
+        print(f"❌ Error: Could not find latitude/longitude columns")
+        print(f"Available columns: {list(df.columns)}")
         sys.exit(1)
+    
+    # 重命名列以便后续使用（如果列名不是标准的latitude/longitude）
+    if lat_col != 'latitude':
+        df = df.rename(columns={lat_col: 'latitude'})
+        print(f"✓ Mapped column: {lat_col} -> latitude")
+    if lon_col != 'longitude':
+        df = df.rename(columns={lon_col: 'longitude'})
+        print(f"✓ Mapped column: {lon_col} -> longitude")
+    
+    # 验证经纬度数据
+    print(f"✓ Found latitude/longitude columns")
+    print(f"  Latitude range: {df['latitude'].min():.6f} to {df['latitude'].max():.6f}")
+    print(f"  Longitude range: {df['longitude'].min():.6f} to {df['longitude'].max():.6f}")
     
     # Configure enrichment
     config = {
