@@ -1,0 +1,10 @@
+Metric,Decision Tree,Random Forest
+Training Time (s),0.02,0.12
+Train RMSE,"$36,918.34","$29,110.01"
+Train MAE,"$25,956.73","$20,022.37"
+Train R²,0.9253,0.9535
+Test RMSE,"$67,877.20","$55,194.13"
+Test MAE,"$49,515.75","$38,273.15"
+Test R²,0.7916,0.8622
+CV RMSE (mean),"$70,836.89","$54,282.64"
+CV RMSE (std),"$4,450.43","$3,379.74"
