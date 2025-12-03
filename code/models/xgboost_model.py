@@ -1,10 +1,10 @@
 """
-Decision Tree Model for Price Prediction
+XGBoost Model for Price Prediction
 """
 
 import pandas as pd
 import numpy as np
-from sklearn.tree import DecisionTreeRegressor
+import xgboost as xgb
 from sklearn.model_selection import train_test_split, cross_val_score, GridSearchCV
 from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
@@ -14,8 +14,8 @@ import joblib
 from pathlib import Path
 
 
-class HousePriceDecisionTree:
-    """Decision Tree model for house price prediction"""
+class HousePriceXGBoost:
+    """XGBoost model for house price prediction"""
     
     def __init__(self, data_path='../../data/listings_enriched.csv'):
         """
@@ -114,58 +114,80 @@ class HousePriceDecisionTree:
         print(f"\nTraining set size: {len(self.X_train)}")
         print(f"Test set size: {len(self.X_test)}")
         
-    def train_model(self, max_depth=None, min_samples_split=2, min_samples_leaf=1):
+    def train_model(self, n_estimators=100, max_depth=6, learning_rate=0.1, 
+                   subsample=0.8, colsample_bytree=0.8, min_child_weight=1):
         """
-        Train the decision tree model
+        Train the XGBoost model
         
         Args:
-            max_depth: Maximum depth of the tree
-            min_samples_split: Minimum samples required to split an internal node
-            min_samples_leaf: Minimum samples required at a leaf node
+            n_estimators: Number of boosting rounds
+            max_depth: Maximum depth of each tree
+            learning_rate: Boosting learning rate
+            subsample: Subsample ratio of the training instances
+            colsample_bytree: Subsample ratio of columns when constructing each tree
+            min_child_weight: Minimum sum of instance weight needed in a child
         """
-        print("\nTraining Decision Tree model...")
-        self.model = DecisionTreeRegressor(
+        print("\nTraining XGBoost model...")
+        self.model = xgb.XGBRegressor(
+            n_estimators=n_estimators,
             max_depth=max_depth,
-            min_samples_split=min_samples_split,
-            min_samples_leaf=min_samples_leaf,
-            random_state=42
+            learning_rate=learning_rate,
+            subsample=subsample,
+            colsample_bytree=colsample_bytree,
+            min_child_weight=min_child_weight,
+            random_state=42,
+            n_jobs=-1,
+            verbosity=1
         )
         
-        self.model.fit(self.X_train, self.y_train)
+        self.model.fit(
+            self.X_train, 
+            self.y_train,
+            eval_set=[(self.X_test, self.y_test)],
+            verbose=False
+        )
         print("Model training completed!")
         
-    def hyperparameter_tuning(self, cv=5):
+    def hyperparameter_tuning(self, cv=5, n_iter=20):
         """
-        Hyperparameter tuning
+        Hyperparameter tuning using RandomizedSearchCV
         
         Args:
             cv: Number of cross-validation folds
+            n_iter: Number of random search iterations
         """
-        print("\nStarting hyperparameter tuning...")
+        from sklearn.model_selection import RandomizedSearchCV
         
-        param_grid = {
-            'max_depth': [5, 10, 15, 20, None],
-            'min_samples_split': [2, 5, 10, 20],
-            'min_samples_leaf': [1, 2, 4, 8]
+        print("\nStarting hyperparameter tuning (Randomized Search)...")
+        
+        param_distributions = {
+            'n_estimators': [50, 100, 150, 200, 300],
+            'max_depth': [3, 4, 5, 6, 7, 8],
+            'learning_rate': [0.01, 0.05, 0.1, 0.15, 0.2],
+            'subsample': [0.6, 0.7, 0.8, 0.9, 1.0],
+            'colsample_bytree': [0.6, 0.7, 0.8, 0.9, 1.0],
+            'min_child_weight': [1, 3, 5, 7]
         }
         
-        grid_search = GridSearchCV(
-            DecisionTreeRegressor(random_state=42),
-            param_grid,
+        random_search = RandomizedSearchCV(
+            xgb.XGBRegressor(random_state=42, n_jobs=-1),
+            param_distributions,
+            n_iter=n_iter,
             cv=cv,
             scoring='neg_mean_squared_error',
             n_jobs=-1,
-            verbose=1
+            verbose=2,
+            random_state=42
         )
         
-        grid_search.fit(self.X_train, self.y_train)
+        random_search.fit(self.X_train, self.y_train)
         
-        print(f"Best parameters: {grid_search.best_params_}")
-        print(f"Best score (neg MSE): {grid_search.best_score_:.2f}")
+        print(f"\nBest parameters: {random_search.best_params_}")
+        print(f"Best score (neg MSE): {random_search.best_score_:.2f}")
         
-        self.model = grid_search.best_estimator_
+        self.model = random_search.best_estimator_
         
-        return grid_search.best_params_
+        return random_search.best_params_
     
     def evaluate_model(self):
         """Evaluate model performance"""
@@ -193,10 +215,14 @@ class HousePriceDecisionTree:
         print(f"  MAE:  ${test_mae:,.2f}")
         print(f"  R²:   {test_r2:.4f}")
         
+        # Calculate MAPE
+        mape = np.mean(np.abs((self.y_test - y_test_pred) / self.y_test)) * 100
+        print(f"  MAPE: {mape:.2f}%")
+        
         # Cross-validation
         cv_scores = cross_val_score(
             self.model, self.X_train, self.y_train,
-            cv=5, scoring='neg_mean_squared_error'
+            cv=5, scoring='neg_mean_squared_error', n_jobs=-1
         )
         cv_rmse = np.sqrt(-cv_scores)
         print(f"\n5-Fold Cross-Validation RMSE:")
@@ -210,6 +236,7 @@ class HousePriceDecisionTree:
             'test_rmse': test_rmse,
             'test_mae': test_mae,
             'test_r2': test_r2,
+            'test_mape': mape,
             'cv_rmse_mean': cv_rmse.mean(),
             'cv_rmse_std': cv_rmse.std()
         }
@@ -237,7 +264,7 @@ class HousePriceDecisionTree:
         plt.figure(figsize=(10, 8))
         top_features = feature_importance_df.head(top_n)
         sns.barplot(data=top_features, x='importance', y='feature')
-        plt.title(f'Top {top_n} Feature Importance - Decision Tree')
+        plt.title(f'Top {top_n} Feature Importance - XGBoost')
         plt.xlabel('Importance')
         plt.ylabel('Feature')
         plt.tight_layout()
@@ -245,8 +272,8 @@ class HousePriceDecisionTree:
         # Save figure
         output_dir = Path(__file__).parent / 'figs'
         output_dir.mkdir(exist_ok=True)
-        plt.savefig(output_dir / 'decision_tree_feature_importance.png', dpi=300, bbox_inches='tight')
-        print(f"\nFeature importance plot saved to: {output_dir / 'decision_tree_feature_importance.png'}")
+        plt.savefig(output_dir / 'xgboost_feature_importance.png', dpi=300, bbox_inches='tight')
+        print(f"\nFeature importance plot saved to: {output_dir / 'xgboost_feature_importance.png'}")
         plt.close()
         
         return feature_importance_df
@@ -262,17 +289,75 @@ class HousePriceDecisionTree:
                  'r--', lw=2)
         plt.xlabel('Actual Price')
         plt.ylabel('Predicted Price')
-        plt.title('Decision Tree: Predicted vs Actual Prices')
+        plt.title('XGBoost: Predicted vs Actual Prices')
         plt.tight_layout()
         
         # Save figure
         output_dir = Path(__file__).parent / 'figs'
         output_dir.mkdir(exist_ok=True)
-        plt.savefig(output_dir / 'decision_tree_predictions.png', dpi=300, bbox_inches='tight')
-        print(f"Prediction plot saved to: {output_dir / 'decision_tree_predictions.png'}")
+        plt.savefig(output_dir / 'xgboost_predictions.png', dpi=300, bbox_inches='tight')
+        print(f"Prediction plot saved to: {output_dir / 'xgboost_predictions.png'}")
         plt.close()
     
-    def save_model(self, filename='decision_tree_model.pkl'):
+    def plot_residuals(self):
+        """Plot residuals analysis"""
+        y_pred = self.model.predict(self.X_test)
+        residuals = self.y_test - y_pred
+        
+        fig, axes = plt.subplots(1, 2, figsize=(15, 5))
+        
+        # Residuals scatter plot
+        axes[0].scatter(y_pred, residuals, alpha=0.5)
+        axes[0].axhline(y=0, color='r', linestyle='--', lw=2)
+        axes[0].set_xlabel('Predicted Price')
+        axes[0].set_ylabel('Residuals')
+        axes[0].set_title('Residual Plot')
+        
+        # Residuals histogram
+        axes[1].hist(residuals, bins=50, edgecolor='black')
+        axes[1].set_xlabel('Residuals')
+        axes[1].set_ylabel('Frequency')
+        axes[1].set_title('Residual Distribution')
+        
+        plt.tight_layout()
+        
+        # Save figure
+        output_dir = Path(__file__).parent / 'figs'
+        output_dir.mkdir(exist_ok=True)
+        plt.savefig(output_dir / 'xgboost_residuals.png', dpi=300, bbox_inches='tight')
+        print(f"Residual plot saved to: {output_dir / 'xgboost_residuals.png'}")
+        plt.close()
+    
+    def plot_learning_curve(self):
+        """Plot learning curve from training history"""
+        try:
+            results = self.model.evals_result()
+            
+            if results and 'validation_0' in results:
+                plt.figure(figsize=(10, 6))
+                epochs = len(results['validation_0']['rmse'])
+                x_axis = range(0, epochs)
+                
+                plt.plot(x_axis, results['validation_0']['rmse'], label='Test')
+                plt.xlabel('Number of Trees')
+                plt.ylabel('RMSE')
+                plt.title('XGBoost Learning Curve')
+                plt.legend()
+                plt.grid(alpha=0.3)
+                plt.tight_layout()
+                
+                # Save figure
+                output_dir = Path(__file__).parent / 'figs'
+                output_dir.mkdir(exist_ok=True)
+                plt.savefig(output_dir / 'xgboost_learning_curve.png', dpi=300, bbox_inches='tight')
+                print(f"Learning curve plot saved to: {output_dir / 'xgboost_learning_curve.png'}")
+                plt.close()
+            else:
+                print("Note: Learning curve not available (model was not trained with eval_set)")
+        except Exception as e:
+            print(f"Note: Could not plot learning curve - {str(e)}")
+    
+    def save_model(self, filename='xgboost_model.pkl'):
         """
         Save the model
         
@@ -291,7 +376,7 @@ class HousePriceDecisionTree:
         joblib.dump(model_data, model_path)
         print(f"\nModel saved to: {model_path}")
     
-    def load_model(self, filename='decision_tree_model.pkl'):
+    def load_model(self, filename='xgboost_model.pkl'):
         """
         Load a saved model
         
@@ -324,41 +409,49 @@ def main():
     """Main function - Run complete training pipeline"""
     
     # Create model instance
-    dt_model = HousePriceDecisionTree()
+    xgb_model = HousePriceXGBoost()
     
     # Load and preprocess data
-    X, y = dt_model.load_and_preprocess_data()
+    X, y = xgb_model.load_and_preprocess_data()
     
     # Split data
-    dt_model.split_data(X, y)
+    xgb_model.split_data(X, y)
     
     # Train base model
-    print("\n=== Training Base Decision Tree Model ===")
-    dt_model.train_model(max_depth=15, min_samples_split=10, min_samples_leaf=5)
+    print("\n=== Training Base XGBoost Model ===")
+    xgb_model.train_model(n_estimators=100, max_depth=6, learning_rate=0.1,
+                         subsample=0.8, colsample_bytree=0.8, min_child_weight=1)
     
     # Evaluate base model
-    metrics = dt_model.evaluate_model()
+    metrics = xgb_model.evaluate_model()
     
     # Hyperparameter tuning (optional, time-consuming)
     print("\n=== Perform Hyperparameter Tuning? ===")
     tune = input("Enter 'y' to tune, any other key to skip: ").lower()
     if tune == 'y':
-        best_params = dt_model.hyperparameter_tuning()
+        best_params = xgb_model.hyperparameter_tuning(cv=5, n_iter=20)
         print("\nRe-evaluating model with best parameters:")
-        metrics = dt_model.evaluate_model()
+        metrics = xgb_model.evaluate_model()
     
     # Feature importance analysis
-    feature_importance = dt_model.plot_feature_importance(top_n=20)
+    feature_importance = xgb_model.plot_feature_importance(top_n=20)
     
     # Plot predictions
-    dt_model.plot_predictions()
+    xgb_model.plot_predictions()
+    
+    # Plot residuals
+    xgb_model.plot_residuals()
+    
+    # Plot learning curve
+    xgb_model.plot_learning_curve()
     
     # Save model
-    dt_model.save_model()
+    xgb_model.save_model()
     
     print("\n=== Training Complete! ===")
     print(f"Final Test R² Score: {metrics['test_r2']:.4f}")
     print(f"Final Test RMSE: ${metrics['test_rmse']:,.2f}")
+    print(f"Final Test MAPE: {metrics['test_mape']:.2f}%")
 
 
 if __name__ == '__main__':
