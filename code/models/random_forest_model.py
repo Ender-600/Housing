@@ -71,7 +71,7 @@ class HousePriceRandomForest:
         # Select features (excluding zestimate and rentZestimate to avoid data leakage)
         numeric_features = [
             'area', 'baths', 'beds', 'latitude', 'longitude',
-            'livingArea', 'daysOnZillow', 'median_income',
+            'daysOnZillow', 'median_income',
             'bus_stops_1km', 'restaurants_nearby', 'cafes_nearby', 
             'schools_nearby', 'parks_nearby', 'gyms_nearby', 'supermarkets_nearby',
             'drive_to_uiuc_main_quad_min', 'drive_to_downtown_champaign_min',
@@ -262,7 +262,8 @@ class HousePriceRandomForest:
         plt.tight_layout()
         
         # Save figure
-        output_dir = Path(__file__).parent
+        output_dir = Path(__file__).parent / 'figs'
+        output_dir.mkdir(exist_ok=True)
         plt.savefig(output_dir / 'random_forest_feature_importance.png', dpi=300, bbox_inches='tight')
         print(f"\nFeature importance plot saved to: {output_dir / 'random_forest_feature_importance.png'}")
         plt.close()
@@ -284,7 +285,8 @@ class HousePriceRandomForest:
         plt.tight_layout()
         
         # Save figure
-        output_dir = Path(__file__).parent
+        output_dir = Path(__file__).parent / 'figs'
+        output_dir.mkdir(exist_ok=True)
         plt.savefig(output_dir / 'random_forest_predictions.png', dpi=300, bbox_inches='tight')
         print(f"Prediction plot saved to: {output_dir / 'random_forest_predictions.png'}")
         plt.close()
@@ -312,7 +314,8 @@ class HousePriceRandomForest:
         plt.tight_layout()
         
         # Save figure
-        output_dir = Path(__file__).parent
+        output_dir = Path(__file__).parent / 'figs'
+        output_dir.mkdir(exist_ok=True)
         plt.savefig(output_dir / 'random_forest_residuals.png', dpi=300, bbox_inches='tight')
         print(f"Residual plot saved to: {output_dir / 'random_forest_residuals.png'}")
         plt.close()
